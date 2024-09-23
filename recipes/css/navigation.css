@@ -1,0 +1,12 @@
+[data-testid="stSidebar"] {
+    background-color: #FFFFFF;  /* Change this to your desired color */
+}
+
+.recipe-card {
+    border: 2px solid #ccc; /* Border color */
+    border-radius: 10px;    /* Rounded corners */
+    padding: 15px;          /* Padding inside the card */
+    margin: 10px;           /* Space between cards */
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); /* Shadow effect */
+    background-color: #f9f9f9; /* Background color */
+}
