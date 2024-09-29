@@ -1,3 +1,5 @@
 streamlit
 mysql-connector-python
 streamlit-option-menu  # If using for navigation
+requests
+Pillow
