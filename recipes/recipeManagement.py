@@ -166,6 +166,8 @@ def custom_title(title):
 # Submit Recipe + Recipe Generator Combined Functionality
 def submit_and_generate_recipe():
     st.title("🍳 Generate and Submit a New Recipe")
+    if submit_image:
+        st.image(submit_image, use_column_width=True)
     st.subheader("Generate a Recipe")
 
     cuisine_type = st.selectbox("Select preferred cuisine type", cuisine_type_options)
