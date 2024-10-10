@@ -1,4 +1,5 @@
 #python  -m streamlit run recipes/recipeManagement.py
+#python  -m streamlit run recipes/app.py
 import streamlit as st
 import requests
 import logging

@@ -1,4 +1,5 @@
 import streamlit as st
+
 from utils import get_connection
 
 def fetch_all_recipes():
@@ -99,12 +100,17 @@ def fetch_recipes(search_query=None, rating_filter=None, cuisine_filter=None, di
     return recipes
 
 def display_stars(rating):
+    # If the rating is None, treat it as 0
+    if rating is None:
+        rating = 0
+
     full_stars = int(rating)  # Number of full stars
-    half_star = 1 if rating % 1 >= 0.5 else 0  # Check for half star
+    half_star = 1 if (rating - full_stars) >= 0.5 else 0  # Check if there's a half star
     empty_stars = 5 - full_stars - half_star  # Remaining empty stars
 
-    stars = "⭐" * full_stars + "⭐" * half_star + "☆" * empty_stars
-    return stars
+    # Return the rating as a string of stars
+    return "⭐" * full_stars + "⭐" * half_star + "☆" * empty_stars
+
 
 
 def show_home():
@@ -128,7 +134,7 @@ def show_home():
     dietary_filter = st.selectbox("Dietary Preference", ["All", "Vegetarian", "Vegan", "Pescatarian", "Flexitarian", "Gluten-Free", "Keto", "Paleo", "Low-FODMAP", "Diabetic", "Halal", "Kosher", "Raw Food"])
 
     # Filter by maximum cook time (slider for cook time in minutes)
-    cook_time_filter = st.slider("Maximum Cook Time (in minutes)", 0, 50, 100)
+    cook_time_filter = st.slider("Maximum Cook Time (in minutes)", 0, 120, 100)
 
     # Determine which query to run based on user input
     if search_query or rating_filter != "All" or cuisine_filter != "All" or dietary_filter != "All" or cook_time_filter < 100:
@@ -167,6 +173,9 @@ def show_home():
     else:
         st.write("No recipes found matching your search criteria.")
 
+
 # Main function to display the homepage
 if __name__ == "__main__":
     show_home()
+
+
