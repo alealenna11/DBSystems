@@ -1,62 +1,57 @@
 import streamlit as st
 from db_connection import connect_db
 from recipe_details import recipe_details  # Import recipe_details function
+from favorites import toggle_favorite
 
-# Function to fetch recipes with filtering options
 def fetch_recipes(search_query=None, rating_filter=None, cuisine_filter=None, dietary_filter=None, cook_time_filter=None):
     conn = connect_db()
     cursor = conn.cursor()
 
-    # Base query for filtering recipes
+    # Base query for filtering recipes with the new Recipe_Ratings table
     query = """
-        SELECT r.recipe_id, r.title, r.description, AVG(rr.rating) as average_rating, u.username, ri.cook_time, ri.servings, ri.ingredients, ri.instructions, d.name AS dietary_name, c.name AS cuisine_name
+        SELECT r.recipe_id, r.title, r.description, AVG(rr.rating) AS average_rating, u.username, 
+               ri.cook_time, ri.servings, ri.ingredients, ri.instructions, d.name AS dietary, c.name AS cuisine
         FROM Recipes r
         JOIN Users u ON r.user_id = u.user_id
         JOIN Recipe_Info ri ON r.recipe_id = ri.recipeInfo_id
         LEFT JOIN Dietary d ON ri.dietary_id = d.dietary_id
         LEFT JOIN Cuisines c ON ri.cuisine_id = c.cuisine_id
-        LEFT JOIN Recipe_Ratings rr ON r.recipe_id = rr.recipe_id
+        LEFT JOIN Recipe_Ratings rr ON r.recipe_id = rr.recipe_id  -- Join with the Recipe_Ratings table
         WHERE 1 = 1
     """
     params = []
 
-    # Search query for filtering by title, creator username, or description
+    # Add filters based on user input
     if search_query:
-        search_query = f"%{search_query}%"
         query += " AND (r.title LIKE %s OR u.username LIKE %s OR r.description LIKE %s)"
-        params.extend([search_query, search_query, search_query])
+        params.extend([f"%{search_query}%", f"%{search_query}%", f"%{search_query}%"])
 
-    # Filtering by rating (if provided)
     if rating_filter and rating_filter != "All":
         query += " HAVING average_rating >= %s"
         params.append(rating_filter)
 
-    # Filtering by cuisine (if provided)
     if cuisine_filter and cuisine_filter != "All":
         query += " AND c.name = %s"
         params.append(cuisine_filter)
 
-    # Filtering by dietary preference (if provided)
     if dietary_filter and dietary_filter != "All":
         query += " AND d.name = %s"
         params.append(dietary_filter)
 
-    # Filtering by cook time (if provided)
     if cook_time_filter:
         query += " AND ri.cook_time <= %s"
         params.append(cook_time_filter)
 
-    # Grouping by recipe ID to calculate the average rating correctly
+    # Group by recipe_id to get average ratings
     query += " GROUP BY r.recipe_id"
 
-    # Executing the final query
     cursor.execute(query, params)
-    rows = cursor.fetchall()
+    results = cursor.fetchall()
     conn.close()
 
     # Creating a list of recipes from the fetched rows
     recipes = []
-    for row in rows:
+    for row in results:
         recipe = {
             "recipe_id": row[0],
             "title": row[1],
@@ -74,12 +69,25 @@ def fetch_recipes(search_query=None, rating_filter=None, cuisine_filter=None, di
 
     return recipes
 
-
-
+# Function to render stars based on rating value
+def render_stars(rating):
+    full_star = '★'
+    half_star = '☆'
+    empty_star = '✩'
+    
+    # Calculate full and half stars
+    full_stars = int(rating)  # Number of full stars
+    half_stars = 1 if (rating - full_stars) >= 0.5 else 0  # Check if there's a half star
+    empty_stars = 5 - full_stars - half_stars  # Remaining stars are empty
+    
+    # Return the rating as a string of stars
+    return full_star * full_stars + half_star * half_stars + empty_stars * empty_star
 
 def show_homepage():
-    if st.session_state.get('logged_in', False):
-        st.title(f"Welcome back, {st.session_state.username}!")  # Show welcome message
+    # Display the welcome message based on the logged-in status
+    if st.session_state.logged_in:
+        welcome_username = st.session_state.logged_in_username
+        st.title(f"Welcome back, {welcome_username}!")  # Show welcome message
     else:
         st.title("Welcome to Bitezy!")
 
@@ -140,8 +148,25 @@ def recipe_list(recipes):
                     st.rerun()  # Rerun to load the recipe details page
 
                 st.write(f"**Description:** {description}")  # Display recipe description
-                
-                st.write(f"**Submitted by:** {username}")  # Display the user who submitted the recipe
+                st.write(f"**Rating:** {render_stars(ratings)}")  # Display the rating as stars
+                if st.button(f"Submitted by: {username}", key=f"user_{username}_{recipe_id}_{i}"):  # Unique key for each button
+                    st.session_state.username = username  # Set the username in the session state
+                    st.session_state.page = 'user_profile'  # Set the page to user profile
+                    st.rerun()
+
+                if st.session_state.logged_in:
+                    user_id = st.session_state.user_id  # Get user_id from session state
+                    if recipe_id in st.session_state.favorites:
+                        if st.button("💔 Unfavorite", key=f"unfavorite_{recipe_id}"):
+                            toggle_favorite(user_id, recipe_id)  # Toggle favorite status
+                            st.session_state.favorites.remove(recipe_id)  # Update session state
+                            st.rerun()
+                    else:
+                        if st.button("❤️ Favorite", key=f"favorite_{recipe_id}"):
+                            toggle_favorite(user_id, recipe_id)  # Toggle favorite status
+                            st.session_state.favorites.append(recipe_id)  # Update session state
+                            st.rerun()
+
                 st.write("---")  # Separator for better readability
     else:
         st.write("No recipes found matching your search criteria.")

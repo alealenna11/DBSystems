@@ -1,66 +1,72 @@
 import streamlit as st
-from homepage import show_home  # Import homepage function
-from recipesdetails import recipesdetails  # Import recipe details function
+
+# Import pages
 from login import show_login  # Import the show_login function
-from profile import show_profile  # Import the profile function
+from homepage import show_homepage  # Import the homepage display function
+from registration import show_registration  # Import the registration function
+from recipe_details import recipe_details  # Import recipe_details function
+from user_profile import show_user_profile  # Import user profile display function
 
 def main():
-    # Set up the session state for page navigation
-    if 'page' not in st.session_state:
-        st.session_state.page = 'homepage'  # Default page is homepage
-    if 'selected_recipe_id' not in st.session_state:
-        st.session_state.selected_recipe_id = None  # Store the selected recipe for details view
+    # Set up the session state for page navigation and user details
     if 'logged_in' not in st.session_state:
-        st.session_state.logged_in = False  # Track login status
-    if 'username' not in st.session_state:
-        st.session_state.username = None  # Store username
+        st.session_state.logged_in = False  # User is not logged in initially
+        st.session_state.page = 'homepage'  # Default page is homepage
+        st.session_state.user_id = None  # Initialize user_id
 
-    # Sidebar Navigation with logo
-    st.sidebar.image("recipes/logo.png", width=200)  # Display the logo at the top of the sidebar
+    # Sidebar for navigation
     st.sidebar.title("Navigation")
 
-    # Adjust navigation based on login state
+    # Button for home page navigation
+    if st.sidebar.button("Home", key="home_button"):
+        st.session_state.page = 'homepage'  # Redirect to homepage
+        st.rerun()  # Rerun the app to update the sidebar
+
+    # Button for login/logout based on login status
     if st.session_state.logged_in:
-        # Show full navigation for logged-in users
-        selection = st.sidebar.selectbox(
-            "Go to",
-            ["Home", "Profile", "Submit & Manage Recipes", "Recipe Details", "Logout"]
-        )
+        # Logout button is visible
+        if st.sidebar.button("Logout", key="logout_button"):
+            # Perform logout action
+            st.session_state.logged_in = False  # Set login status to false
+            st.session_state.username = None  # Clear username
+            st.session_state.user_id = None  # Clear user_id on logout
+            st.session_state.page = 'homepage'  # Redirect to homepage
+            st.rerun()  # Rerun the app to update the sidebar
+            
+        # Add a profile navigation option
+        if st.sidebar.button("Profile", key="profile_button"):
+            st.session_state.page = 'user_profile'  # Navigate to user profile
+
     else:
-        # Show limited navigation for not logged-in users
-        selection = st.sidebar.selectbox("Go to", ["Home", "Login"])
+        # Login and Register buttons are visible
+        if st.sidebar.button("Login", key="login_button"):
+            st.session_state.page = 'login'  # Change to login page
+        if st.sidebar.button("Register", key="register_button"):
+            st.session_state.page = 'registration'  # Change to registration page
 
-    # Handle navigation logic based on selection
-    if selection == "Home":
-        show_home()  # Call the homepage function
-
-    elif selection == "Profile" and st.session_state.logged_in:
-        show_profile(st.session_state.username)  # Show profile page if logged in
-
-    elif selection == "Submit & Manage Recipes" and st.session_state.logged_in:
-        show_profile(st.session_state.username)  # Show profile with recipe management options
-
-    elif selection == "Recipe Details" and st.session_state.logged_in:
-        if st.session_state.selected_recipe_id:
-            recipesdetails(st.session_state.selected_recipe_id)  # Show recipe details if a recipe has been selected
+    # Navigation logic based on the page state
+    if st.session_state.page == 'homepage':
+        show_homepage()  # Display homepage content
+    elif st.session_state.page == 'login':
+        if show_login():  # Call the login function and check for successful login
+            st.session_state.logged_in = True  # Set logged_in to True on successful login
+            # Assume that the show_login function sets st.session_state.user_id
+            st.session_state.page = 'homepage'  # Redirect to homepage
+    elif st.session_state.page == 'registration':
+        show_registration()  # Display registration page
+    elif st.session_state.page == 'recipe_details':
+        recipe_details()  # Call the recipe details function
+    elif st.session_state.page == 'user_profile':
+        if st.session_state.logged_in:  # Check if user is logged in before showing profile
+            show_user_profile(st.session_state.username)  # Call the user profile function and pass the username
         else:
-            st.error("Please select a recipe to view details.")
+            st.error("You need to be logged in to view your profile.")  # Show an error message if not logged in
+            
+    # Optional: Consider adding a redirect after profile view
+    if st.session_state.page == 'user_profile' and st.sidebar.button("Back to Home"):
+        st.session_state.page = 'homepage'
+        st.rerun()  # Rerun to go back to the homepage
 
-    elif selection == "Login":
-        # Login process
-        if show_login():  # If login is successful, update session state
-            st.success(f"Welcome, {st.session_state.username}!")
-            st.session_state.page = "homepage"  # Change the page in session state
-            # No need to rerun, Streamlit will automatically update
-            # after session state changes
-
-    elif selection == "Logout" and st.session_state.logged_in:
-        # Logout process
-        st.session_state.logged_in = False
-        st.session_state.username = None
-        st.success("Logged out successfully.")
-        st.session_state.page = "homepage"  # Redirect to homepage after logout
-        # No need to rerun, Streamlit will automatically update the page
 
 if __name__ == "__main__":
     main()
