@@ -1,6 +1,6 @@
 import streamlit as st
-import mysql.connector
 from db_connection import connect_db
+from user_profile import fetch_user_favorites, add_to_favorites
 
 # Fetch individual recipe details
 def fetch_recipe_details(recipe_id):
@@ -36,7 +36,7 @@ def recipe_details():
         st.write(f"**Description:** {description}")
 
         if image_src:
-            st.image(f"uploads/recipe/{image_src}", caption=title, width=300)
+            st.image(f"recipes/uploads/recipe_images/{image_src}", caption=title, width=300)
 
         col1, col2 = st.columns(2)
 
@@ -58,6 +58,21 @@ def recipe_details():
 
         st.subheader("Instructions")
         st.write(instructions)
+
+        # Favorite button logic
+        if st.session_state.user_id:  # Check if user is logged in
+            # Fetch user favorites
+            favorite_recipe_ids = fetch_user_favorites(st.session_state.user_id)
+
+            # Check if the recipe is already favorited
+            if recipe_id not in favorite_recipe_ids:  
+                if st.button("Add to Favorites"):
+                    add_to_favorites(st.session_state.user_id, recipe_id)
+                    st.success("Recipe added to your favorites!")
+            else:
+                st.write("This recipe is already in your favorites.")
+        else:
+            st.warning("You need to be logged in to favorite this recipe.")
 
         # Rating logic
         if st.session_state.user_id and username != st.session_state.username:
@@ -160,55 +175,5 @@ def display_section(section_name, ingredients):
                 if i + 1 < num_ingredients:
                     st.write(f"- {ingredients[i + 1]}")
 
-def add_recipe():
-    st.title("Add a New Recipe")
 
-    with st.form(key='add_recipe_form'):
-        title = st.text_input("Title", max_chars=100)
-        description = st.text_area("Description", max_chars=500)
-        image_src = st.text_input("Image Source (filename)", max_chars=255)
-        cook_time = st.number_input("Cook Time (in minutes)", min_value=0)
-        servings = st.number_input("Servings", min_value=1)
-        ingredients = st.text_area("Ingredients (separate by line)", max_chars=5000)
-        instructions = st.text_area("Instructions", max_chars=10000)
 
-        dietary_types = ["Vegan", "Vegetarian", "Gluten-Free", "None"]  
-        dietary_id = st.selectbox("Dietary Type", options=dietary_types)
-
-        cuisine_types = ["Italian", "Chinese", "Indian", "Mexican", "None"]  
-        cuisine_id = st.selectbox("Cuisine Type", options=cuisine_types)
-
-        submit_button = st.form_submit_button("Add Recipe")
-
-        if submit_button:
-            user_id = st.session_state.user_id  
-            if add_recipe_to_db(title, description, image_src, cook_time, servings, ingredients, instructions, dietary_id, cuisine_id, user_id):
-                st.success("Recipe added successfully!")
-            else:
-                st.error("An error occurred while adding the recipe.")
-
-def add_recipe_to_db(title, description, image_src, cook_time, servings, ingredients, instructions, dietary_id, cuisine_id, user_id):
-    conn = connect_db()
-    cursor = conn.cursor()
-    try:
-        cursor.execute(""" 
-            INSERT INTO Recipes (title, description, image_src, user_id) 
-            VALUES (%s, %s, %s, %s)
-        """, (title, description, image_src, user_id))
-        
-        recipe_id = cursor.lastrowid
-        
-        cursor.execute(""" 
-            INSERT INTO Recipe_Info (recipeInfo_id, cook_time, servings, ingredients, instructions, dietary_id, cuisine_id) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (recipe_id, cook_time, servings, ingredients, instructions, dietary_id, cuisine_id))
-        
-        conn.commit()
-        return True
-    except Exception as e:
-        st.error(f"Error adding recipe: {e}")
-        conn.rollback()
-        return False
-    finally:
-        cursor.close()
-        conn.close()

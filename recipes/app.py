@@ -17,6 +17,9 @@ def main():
     # Sidebar for navigation
     st.sidebar.title("Navigation")
 
+    # Add logo under the navigation title
+    st.sidebar.image("recipes/uploads/logo.png", use_column_width=True)
+
     # Button for home page navigation
     if st.sidebar.button("Home", key="home_button"):
         st.session_state.page = 'homepage'  # Redirect to homepage

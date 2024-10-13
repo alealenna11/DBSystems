@@ -9,7 +9,7 @@ def fetch_recipes(search_query=None, rating_filter=None, cuisine_filter=None, di
 
     # Base query for filtering recipes
     query = """
-        SELECT r.recipe_id, r.title, r.description, AVG(rr.rating) as average_rating, u.username, ri.cook_time, ri.servings, ri.ingredients, ri.instructions, d.name AS dietary_name, c.name AS cuisine_name
+        SELECT r.recipe_id, r.title, r.description, AVG(rr.rating) AS average_rating, u.username, ri.cook_time, ri.servings, ri.ingredients, ri.instructions, d.name AS dietary_name, c.name AS cuisine_name
         FROM Recipes r
         JOIN Users u ON r.user_id = u.user_id
         JOIN Recipe_Info ri ON r.recipe_id = ri.recipeInfo_id
@@ -25,11 +25,6 @@ def fetch_recipes(search_query=None, rating_filter=None, cuisine_filter=None, di
         search_query = f"%{search_query}%"
         query += " AND (r.title LIKE %s OR u.username LIKE %s OR r.description LIKE %s)"
         params.extend([search_query, search_query, search_query])
-
-    # Filtering by rating (if provided)
-    if rating_filter and rating_filter != "All":
-        query += " HAVING average_rating >= %s"
-        params.append(rating_filter)
 
     # Filtering by cuisine (if provided)
     if cuisine_filter and cuisine_filter != "All":
@@ -47,7 +42,12 @@ def fetch_recipes(search_query=None, rating_filter=None, cuisine_filter=None, di
         params.append(cook_time_filter)
 
     # Grouping by recipe ID to calculate the average rating correctly
-    query += " GROUP BY r.recipe_id"
+    query += " GROUP BY r.recipe_id, r.title, r.description, u.username, ri.cook_time, ri.servings, ri.ingredients, ri.instructions, d.name, c.name"
+
+    # Filtering by rating (if provided)
+    if rating_filter and rating_filter != "All":
+        query += " HAVING AVG(rr.rating) >= %s"
+        params.append(rating_filter)
 
     # Executing the final query
     cursor.execute(query, params)
@@ -74,9 +74,7 @@ def fetch_recipes(search_query=None, rating_filter=None, cuisine_filter=None, di
 
     return recipes
 
-
-
-
+# Modify the show_homepage function to ensure the rating filter is passed correctly
 def show_homepage():
     if st.session_state.get('logged_in', False):
         st.title(f"Welcome back, {st.session_state.username}!")  # Show welcome message
@@ -102,7 +100,7 @@ def show_homepage():
 
     # Filter by dietary preferences (dropdown)
     with col3:
-        dietary_filter = st.selectbox("Dietary Preference", ["All", "Vegetarian", "Vegan", "Pescatarian", "Flexitarian", "Gluten-Free", "Keto", "Paleo", "Low-FODMAP", "Diabetic", "Halal", "Kosher", "Raw Food"])
+        dietary_filter = st.selectbox("Dietary Preference", ["All", "Vegetarian", "Vegan", "Pescatarian", "Gluten-Free", "Halal", "Raw Food"])
 
     # Filter by maximum cook time (slider for cook time in minutes)
     cook_time_filter = st.slider("Maximum Cook Time (in minutes)", 0, 120, 100)
@@ -110,7 +108,7 @@ def show_homepage():
     # Fetch recipes based on search and filter criteria
     recipes = fetch_recipes(
         search_query=search_query if search_query else None,
-        rating_filter=rating_filter if rating_filter != "All" else None,
+        rating_filter=int(rating_filter) if rating_filter != "All" else None,  # Convert rating to int if not "All"
         cuisine_filter=cuisine_filter if cuisine_filter != "All" else None,
         dietary_filter=dietary_filter if dietary_filter != "All" else None,
         cook_time_filter=cook_time_filter if cook_time_filter < 120 else None
@@ -140,8 +138,14 @@ def recipe_list(recipes):
                     st.rerun()  # Rerun to load the recipe details page
 
                 st.write(f"**Description:** {description}")  # Display recipe description
-                
                 st.write(f"**Submitted by:** {username}")  # Display the user who submitted the recipe
+
+                # Display the average rating
+                if ratings:
+                    st.write(f"**Average Rating:** {ratings:.1f} ⭐️")  # Display average rating with a star
+                else:
+                    st.write("**Average Rating:** No ratings yet.")  # Handle case with no ratings
+
                 st.write("---")  # Separator for better readability
     else:
         st.write("No recipes found matching your search criteria.")
