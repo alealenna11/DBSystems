@@ -4,34 +4,40 @@ from user_profile import fetch_user_favorites, add_to_favorites
 
 # Fetch individual recipe details
 def fetch_recipe_details(recipe_id):
-    conn = connect_db()
-    cursor = conn.cursor()
+    db, recipes_collection, _, recipe_info_collection, recipe_ratings_collection, *_ = connect_db()
 
-    query = """
-    SELECT r.title, r.description, r.image_src, AVG(rr.rating) AS avg_rating, 
-           ri.cook_time, ri.servings, ri.ingredients, ri.instructions, u.username
-    FROM Recipes r
-    JOIN Recipe_Info ri ON r.recipe_id = ri.recipeInfo_id
-    JOIN Users u ON r.user_id = u.user_id
-    LEFT JOIN Recipe_Ratings rr ON r.recipe_id = rr.recipe_id
-    WHERE r.recipe_id = %s
-    GROUP BY r.recipe_id, u.username
-    """
-    cursor.execute(query, (recipe_id,))
-    recipe = cursor.fetchone()
-    conn.close()
-    return recipe
+    # Fetch recipe details
+    recipe = recipes_collection.find_one({"_id": recipe_id})
+    recipe_info = recipe_info_collection.find_one({"recipe_id": recipe_id})
+    recipe_ratings = list(recipe_ratings_collection.find({"recipe_id": recipe_id}))
+
+    # Calculate average rating
+    avg_rating = (
+        sum(rating.get("rating", 0) for rating in recipe_ratings) / len(recipe_ratings)
+        if recipe_ratings
+        else None
+    )
+
+    return recipe, recipe_info, avg_rating, recipe_ratings
+
 
 def recipe_details():
     if 'user_id' not in st.session_state:
-        st.session_state.user_id = None  
+        st.session_state.user_id = None
 
     recipe_id = st.session_state.selected_recipe
-    recipe = fetch_recipe_details(recipe_id)
+    recipe, recipe_info, avg_rating, recipe_ratings = fetch_recipe_details(recipe_id)
 
     if recipe:
-        title, description, image_src, avg_rating, cook_time, servings, ingredients, instructions, username = recipe
-        
+        title = recipe.get("title")
+        description = recipe.get("description")
+        image_src = recipe.get("image_src")
+        cook_time = recipe_info.get("cook_time") if recipe_info else None
+        servings = recipe_info.get("servings") if recipe_info else None
+        ingredients = recipe_info.get("ingredients") if recipe_info else None
+        instructions = recipe_info.get("instructions") if recipe_info else None
+        username = recipe.get("creator_username", "Unknown")
+
         st.title(title)
         st.write(f"**Description:** {description}")
 
@@ -41,31 +47,28 @@ def recipe_details():
         col1, col2 = st.columns(2)
 
         with col1:
-            st.write(f"**Cook Time:** {cook_time} minutes")
+            st.write(f"**Cook Time:** {cook_time} minutes" if cook_time else "**Cook Time:** N/A")
         with col2:
-            st.write(f"**Servings:** {servings}")
+            st.write(f"**Servings:** {servings}" if servings else "**Servings:** N/A")
 
         if username:
-            user_link = f"/?username={username}"  
-            st.write(f"**Submitted by:** [**{username}**]({user_link})")
+            st.write(f"**Submitted by:** {username}")
 
         st.write(f"**Average Rating:** {avg_rating:.1f}" if avg_rating else "**Average Rating:** Not yet rated")
 
-        st.write("")  
+        st.write("")
         st.markdown("<hr style='margin: 5px 0;'>", unsafe_allow_html=True)
 
         format_ingredients(ingredients)
 
         st.subheader("Instructions")
-        st.write(instructions)
+        st.write(instructions if instructions else "No instructions provided.")
 
         # Favorite button logic
         if st.session_state.user_id:  # Check if user is logged in
-            # Fetch user favorites
             favorite_recipe_ids = fetch_user_favorites(st.session_state.user_id)
 
-            # Check if the recipe is already favorited
-            if recipe_id not in favorite_recipe_ids:  
+            if recipe_id not in favorite_recipe_ids:
                 if st.button("Add to Favorites"):
                     add_to_favorites(st.session_state.user_id, recipe_id)
                     st.success("Recipe added to your favorites!")
@@ -78,12 +81,12 @@ def recipe_details():
         if st.session_state.user_id and username != st.session_state.username:
             current_rating = get_user_rating(recipe_id, st.session_state.user_id)
 
-            rating = st.number_input("Rate this recipe:", min_value=1, max_value=5, value=current_rating if current_rating else 3)
+            rating = st.number_input("Rate this recipe:", min_value=1, max_value=5, value=current_rating or 3)
             if st.button("Submit Rating"):
                 if submit_rating(recipe_id, st.session_state.user_id, rating):
                     st.success("Thank you for your rating!")
-                    updated_recipe = fetch_recipe_details(recipe_id)
-                    st.write(f"**Average Rating:** {updated_recipe[3]:.1f}" if updated_recipe[3] else "**Average Rating:** Not yet rated")
+                    updated_recipe, _, updated_avg_rating, _ = fetch_recipe_details(recipe_id)
+                    st.write(f"**Average Rating:** {updated_avg_rating:.1f}" if updated_avg_rating else "**Average Rating:** Not yet rated")
                 else:
                     st.error("An error occurred while submitting your rating.")
         elif not st.session_state.user_id:
@@ -92,62 +95,58 @@ def recipe_details():
         if st.button("Back to Recipe List"):
             st.session_state.page = 'homepage'
             st.session_state.selected_recipe = None
-            st.rerun()  
+            st.rerun()
 
     else:
         st.write("Recipe not found.")
 
 def submit_rating(recipe_id, user_id, rating):
-    conn = connect_db()
-    cursor = conn.cursor()
+    _, _, _, _, recipe_ratings_collection, *_ = connect_db()
     try:
-        # Check if the user has already rated this recipe
-        cursor.execute("SELECT * FROM Recipe_Ratings WHERE user_id = %s AND recipe_id = %s", (user_id, recipe_id))
-        existing_rating = cursor.fetchone()
+        existing_rating = recipe_ratings_collection.find_one({"recipe_id": recipe_id, "user_id": user_id})
 
         if existing_rating:
             # Update existing rating
-            cursor.execute("UPDATE Recipe_Ratings SET rating = %s WHERE user_id = %s AND recipe_id = %s", (rating, user_id, recipe_id))
+            recipe_ratings_collection.update_one(
+                {"recipe_id": recipe_id, "user_id": user_id},
+                {"$set": {"rating": rating}}
+            )
         else:
             # Insert the new rating
-            cursor.execute("INSERT INTO Recipe_Ratings (user_id, recipe_id, rating) VALUES (%s, %s, %s)",
-                           (user_id, recipe_id, rating))
-        conn.commit()
+            recipe_ratings_collection.insert_one({
+                "recipe_id": recipe_id,
+                "user_id": user_id,
+                "rating": rating
+            })
         return True
     except Exception as e:
         st.error(f"Error submitting rating: {e}")
-        conn.rollback()
         return False
-    finally:
-        cursor.close()
-        conn.close()
 
 def get_user_rating(recipe_id, user_id):
-    conn = connect_db()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("SELECT rating FROM Recipe_Ratings WHERE user_id = %s AND recipe_id = %s", (user_id, recipe_id))
-        result = cursor.fetchone()
-        return result[0] if result else None
-    finally:
-        cursor.close()
-        conn.close()
+    _, _, _, _, recipe_ratings_collection, *_ = connect_db()
+    rating = recipe_ratings_collection.find_one({"recipe_id": recipe_id, "user_id": user_id})
+    return rating.get("rating") if rating else None
 
 # Function to format ingredients in a two-column layout
 def format_ingredients(ingredients):
-    ingredient_list = ingredients.split("\n")
-    
+    if not ingredients:
+        st.write("No ingredients provided.")
+        return
+
+    ingredient_list = ingredients if isinstance(ingredients, list) else ingredients.split("\n")
+
     section_name = "Ingredients"
     section_ingredients = []
 
     for line in ingredient_list:
         line = line.strip()
         if line:
-            if line.endswith(":"):  
+            if line.endswith(":"):
                 if section_ingredients:
                     display_section(section_name, section_ingredients)
                     section_ingredients = []
-                
+
                 section_name = f"{line[:-1]} Ingredients"
             else:
                 section_ingredients.append(line)
@@ -157,7 +156,7 @@ def format_ingredients(ingredients):
 
 def display_section(section_name, ingredients):
     st.subheader(section_name)
-    
+
     num_ingredients = len(ingredients)
 
     if num_ingredients <= 5:
@@ -165,15 +164,12 @@ def display_section(section_name, ingredients):
             st.write(f"- {ingredient}")
     else:
         cols = st.columns(2)
-        
+
         for i in range(0, num_ingredients, 2):
             with cols[0]:
                 if i < num_ingredients:
                     st.write(f"- {ingredients[i]}")
-            
+
             with cols[1]:
                 if i + 1 < num_ingredients:
                     st.write(f"- {ingredients[i + 1]}")
-
-
-

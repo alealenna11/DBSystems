@@ -1,13 +1,16 @@
-# db_connection.py
-import mysql.connector
+from pymongo import MongoClient
 
-# Function to connect to the MySQL database
 def connect_db():
-    config = {
-        'user': 'inf2003-dev',       # Replace with your MySQL username
-        'password': 'p@ssw0rd',   # Replace with your MySQL password
-        'host': '34.142.128.147',           # Change if your MySQL server is not local
-        'database': 'inf2003-a1'       # Your database name
-    }
-    conn = mysql.connector.connect(**config)
-    return conn
+    """Connect to MongoDB and return database and collections."""
+    client = MongoClient('mongodb://localhost:27017/')
+    db = client['inf2003_db']  # Your database name
+
+    # Collections
+    recipes_collection = db['recipes']
+    users_collection = db['users']
+    recipe_info_collection = db['recipe_info']
+    recipe_ratings_collection = db['recipe_ratings']
+    cuisines_collection = db['cuisines']
+    dietary_collection = db['dietary']
+
+    return db, recipes_collection, users_collection, recipe_info_collection, recipe_ratings_collection, cuisines_collection, dietary_collection

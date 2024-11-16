@@ -1,34 +1,21 @@
-#python  -m streamlit run recipes/recipeManagement.py
-#python  -m streamlit run recipes/app.py
+# recipeManagement.py
+# Command to run: python -m streamlit run recipes/recipeManagement.py
 import streamlit as st
-import requests
-import logging
+from pymongo import MongoClient
 import random
+import logging
 from PIL import Image
 import os
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 
-# API Request Helper Functions with Enhanced Error Handling
-def api_post(url, payload):
-    '''Helper function to make POST requests to the API with error handling.'''
-    try:
-        response = requests.post(url, json=payload)
-        if response.status_code == 201:
-            logging.info(f"POST request successful: {response.status_code}")
-            return response
-        elif response.status_code == 400:
-            st.error("Bad Request: Please check the submitted data.")
-        elif response.status_code == 500:
-            st.error("Server Error: Please try again later.")
-        else:
-            st.error(f"Unexpected error: {response.status_code}")
-        return response
-    except requests.exceptions.RequestException as e:
-        logging.error(f"POST request failed: {e}")
-        st.error(f"API request failed: {e}")
-        return None
+# MongoDB connection
+def connect_db():
+    client = MongoClient('mongodb://localhost:27017/')
+    db = client['inf2003_db']  # Database name
+    recipes_collection = db['recipes']
+    return recipes_collection
 
 # Function to check if an image exists before loading
 def load_image(image_path):
@@ -38,28 +25,20 @@ def load_image(image_path):
         st.warning(f"Image not found: {image_path}")
         return None
 
-# Session State Management
-if 'recipe_name' not in st.session_state:
-    st.session_state['recipe_name'] = ""
-if 'ingredients' not in st.session_state:
-    st.session_state['ingredients'] = ""
-if 'steps' not in st.session_state:
-    st.session_state['steps'] = ""
-
 # Confirmation dialog function
 def confirm_action(action_type):
-    '''Displays a confirmation dialog before executing an action.'''
+    """Displays a confirmation dialog before executing an action."""
     st.write(f"### Are you sure you want to {action_type} this recipe?")
     return st.button(f"Confirm {action_type.capitalize()}")
 
-# Styling and UI Configuration
+# Styling for Streamlit app
 st.markdown("""
     <style>
     .stApp {
-        background-color: #ffb3b3;
+        background-color: #f8f9fa;
     }
     .sidebar .sidebar-content { 
-        background: #ffb3b3; 
+        background: #e3f2fd; 
     }
     h1 { 
         color: #4CAF50; 
@@ -73,213 +52,92 @@ st.markdown("""
         border: 1px solid #ccc; 
         width: 100%; 
     }
-    label {
-        color: #FF4500; 
-        font-weight: bold;
-        font-size: 16px;
-    }
-    .recipe-title {
-        font-size: 24px;
-        font-weight: bold;
-        color: #00FFFF;
-    }
-    .recipe-content {
-        font-size: 18px;
-        color: #FFFFFF;
-        line-height: 1.6;
-    }
-    .submit-button button {
-        background-color: #90ee90;
-        color: black;
-        border: none;
-        border-radius: 10px;
-        padding: 10px 20px;
-        font-size: 16px;
-        cursor: pointer;
-        transition: 0.3s ease;
-    }
-    .submit-button button:hover {
-        background-color: #76c776;
-    }
-    .recipe-box {
-        background-color: #e9f5f2;
-        padding: 20px;
-        border-radius: 10px;
-        margin-bottom: 20px;
-        box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
-    }
     </style>
 """, unsafe_allow_html=True)
 
-# Define image paths (ensure these paths are correct)
-submit_image_path = "recipes/submitRecipe.jpg"
-edit_image_path = "recipes/editRecipe.jpg"
-delete_image_path = "recipes/deleteRecipe.jpg"
-
-# Load images with error handling
-submit_image = load_image(submit_image_path)
-edit_image = load_image(edit_image_path)
-delete_image = load_image(delete_image_path)
-
-
-# Cuisines data from the table
-cuisine_type_options = [
-    "Malay", "Indian", "Chinese", "Japanese", "Korean", "Thai",
-    "Indonesian", "Vietnamese", "Mexican", "French", "Italian",
-    "American", "Mediterranean", "Middle Eastern", "Filipino"
-]
-
-# Dietary data from the table
-dietary_restrictions_options = [
-    "Vegetarian", "Vegan", "Pescatarian", "Flexitarian", "Gluten-Free",
-    "Keto", "Paleo", "Low-FODMAP", "Diabetic", "Halal", "Kosher", "Raw Food"
-]
-
-# Recipes data categorized by cuisine
+# Predefined recipes for generation
 PREDEFINED_RECIPES = {
     "American": [
         {"title": "Chocolate Cake", "description": "A delicious chocolate cake recipe."},
         {"title": "Apple Pie", "description": "Traditional apple pie recipe."},
-        {"title": "Cinnamon Bun", "description": "Warm cinnamon bun perfect for Christmas."},
-        {"title": "Popsicle", "description": "Cold, good for summer days."},
-        {"title": "Strawberry Shortcake", "description": "Fresh strawberry with cream."}
     ],
     "French": [
-        {"title": "The Ultimate Berry Crumble", "description": "Sweet and savoury dessert."},
-        {"title": "Chocolate Croissant", "description": "Crispy and buttery croissant spread with chocolate."},
-        {"title": "Macarons", "description": "A sweet meringue, a delicate duet of almond and sugar."},
-        {"title": "Chocolate Mousse", "description": "Savoury or sweet dish with the consistency of a light pudding."}
+        {"title": "Macarons", "description": "A sweet meringue dessert."},
+        {"title": "Chocolate Mousse", "description": "Light and creamy dessert."},
     ],
     "Chinese": [
         {"title": "Chicken Rice", "description": "Tender chicken with soy sauce marinade."}
     ],
-    "Other": [
-        {"title": "Hot Chocolate", "description": "Hot chocolate with marshmallow."},
-        {"title": "Treasure Sandwich", "description": "Ham and cheese sandwich."},
-        {"title": "dddd", "description": "hhhh"}
-    ]
 }
 
-# Utility function for displaying title
-def custom_title(title):
-    st.markdown(f"<h1>{title}</h1>", unsafe_allow_html=True)
-
-# Submit Recipe + Recipe Generator Combined Functionality
+# Recipe submission and generation
 def submit_and_generate_recipe():
-    st.title("🍳 Generate and Submit a New Recipe")
-    if submit_image:
-        st.image(submit_image, use_column_width=True)
-    st.subheader("Generate a Recipe")
+    st.title("🍳 Submit and Generate a Recipe")
+    recipes_collection = connect_db()
 
-    cuisine_type = st.selectbox("Select preferred cuisine type", cuisine_type_options)
-    dietary_restrictions = st.selectbox("Select dietary restrictions or preferences", dietary_restrictions_options)
-
-    num_recipes = st.number_input("Number of recipes to generate", min_value=1, max_value=5, step=1, value=1)
+    cuisine_type = st.selectbox("Cuisine Type", list(PREDEFINED_RECIPES.keys()) + ["Other"])
+    num_recipes = st.slider("Number of recipes to generate", 1, 5, 1)
 
     if st.button("Generate Recipes"):
-        recipes = []
         for _ in range(num_recipes):
-            # Select a random recipe based on the chosen cuisine type
             if cuisine_type in PREDEFINED_RECIPES:
                 recipe = random.choice(PREDEFINED_RECIPES[cuisine_type])
-                recipe_name = recipe["title"]
-                recipe_description = recipe["description"]
+                recipes_collection.insert_one(recipe)
+                st.success(f"Recipe '{recipe['title']}' generated and saved successfully!")
+
+    with st.form("submit_recipe_form"):
+        title = st.text_input("Recipe Title")
+        description = st.text_area("Recipe Description")
+        submit = st.form_submit_button("Submit Recipe")
+
+        if submit:
+            if title and description:
+                recipe = {"title": title, "description": description}
+                recipes_collection.insert_one(recipe)
+                st.success(f"Recipe '{title}' submitted successfully!")
             else:
-                recipe_name = f"{cuisine_type.capitalize()} Dish"
-                recipe_description = f"{cuisine_type.capitalize()} Style Dish"
+                st.error("Please fill in all fields.")
 
-            # Apply dietary restriction description
-            if dietary_restrictions:
-                recipe_description += f" and {dietary_restrictions.lower()} friendly."
-
-            recipes.append((recipe_name, recipe_description))
-
-        # Display the generated recipes with updated styling
-        for idx, (recipe_name, recipe_description) in enumerate(recipes, start=1):
-            st.markdown(f"""
-                <div class="recipe-box" style="background-color:#8B4513; padding:20px; border-radius:10px; margin-bottom:20px; box-shadow:0 0 15px rgba(0, 0, 0, 0.1);">
-                    <div class="recipe-title" style="font-size:24px; font-weight:bold; color:#FFD700;">Recipe {idx}: {recipe_name}</div>
-                    <div class="recipe-content" style="font-size:18px; color:#FFFFFF;">{recipe_description}</div>
-                </div>
-            """, unsafe_allow_html=True)
-            st.session_state['recipe_name'] = recipe_name
-            st.session_state['ingredients'] = "Generated ingredients"
-            st.session_state['steps'] = "Generated steps"
-
-    st.subheader("Submit Your Recipe")
-    with st.form(key='recipe_form'):
-        st.session_state['recipe_name'] = st.text_input("Recipe Name", value=st.session_state['recipe_name'], placeholder="Enter your recipe name")
-        st.session_state['ingredients'] = st.text_area("Ingredients", value=st.session_state['ingredients'], placeholder="List your ingredients here")
-        st.session_state['steps'] = st.text_area("Steps", value=st.session_state['steps'], placeholder="Write down the steps for your recipe")
-        submit_button = st.form_submit_button(label="Submit Recipe ✨")
-
-    if submit_button:
-        payload = {
-            "name": st.session_state['recipe_name'],
-            "ingredients": st.session_state['ingredients'],
-            "steps": st.session_state['steps']
-        }
-        if confirm_action("submit"):
-            # Simulate API POST request (replace with actual API call)
-            st.success(f"🎉 Your recipe '{st.session_state['recipe_name']}' has been submitted successfully!")
-
-# Confirmation dialog function
-def confirm_action(action_type):
-    '''Displays a confirmation dialog before executing an action.'''
-    st.write(f"### Are you sure you want to {action_type} this recipe?")
-    return st.button(f"Confirm {action_type.capitalize()}")
-
-# Edit Recipe Functionality
+# Edit recipe functionality
 def edit_recipe():
-    custom_title("✏️ Edit Your Recipe")
-    if edit_image:
-        st.image(edit_image, use_column_width=True)
+    st.title("✏️ Edit a Recipe")
+    recipes_collection = connect_db()
 
-    recipe_id = st.text_input("Enter the Recipe ID to edit:", placeholder="Enter recipe ID")
+    recipe_id = st.text_input("Enter Recipe ID to edit:")
     if recipe_id:
-        # Simulate fetching the recipe for editing (replace with actual API call)
-        recipe = {"name": "Sample Recipe", "ingredients": "Sample Ingredients", "steps": "Sample Steps"}
-        with st.form(key='edit_recipe_form'):
-            st.session_state['recipe_name'] = st.text_input("Recipe Name", value=recipe.get('name'))
-            st.session_state['ingredients'] = st.text_area("Ingredients", value=recipe.get('ingredients'))
-            st.session_state['steps'] = st.text_area("Steps", value=recipe.get('steps'))
-            edit_button = st.form_submit_button(label="Save Changes 💾")
+        recipe = recipes_collection.find_one({"_id": recipe_id})
 
-        if edit_button:
-            payload = {"name": st.session_state['recipe_name'], "ingredients": st.session_state['ingredients'], "steps": st.session_state['steps']}
-            if confirm_action("edit"):
-                # Simulate API PUT request (replace with actual API call)
-                st.success(f"🎉 Your recipe '{st.session_state['recipe_name']}' has been updated successfully!")
+        if recipe:
+            with st.form("edit_recipe_form"):
+                title = st.text_input("Recipe Title", value=recipe["title"])
+                description = st.text_area("Recipe Description", value=recipe["description"])
+                submit = st.form_submit_button("Update Recipe")
 
-# Delete Recipe Functionality
+                if submit:
+                    updated_recipe = {"title": title, "description": description}
+                    recipes_collection.update_one({"_id": recipe_id}, {"$set": updated_recipe})
+                    st.success("Recipe updated successfully!")
+        else:
+            st.error("Recipe not found.")
+
+# Delete recipe functionality
 def delete_recipe():
-    custom_title("🗑️ Delete Recipe")
-    if delete_image:
-        st.image(delete_image, use_column_width=True)
+    st.title("🗑️ Delete a Recipe")
+    recipes_collection = connect_db()
 
-    recipe_id = st.text_input("Enter the Recipe ID to delete:", placeholder="Enter recipe ID")
-    reasons = ["No longer needed", "Recipe has errors", "Duplicate recipe", "Other, please specify"]
-    selected_reason = st.selectbox("Reason for deleting the recipe", reasons)
-    other_reason = st.text_area("Please specify your reason:") if selected_reason == "Other, please specify" else ""
-
-    final_reason = other_reason if other_reason else selected_reason
-    delete_button = st.button("Delete Recipe ❌")
-
-    if delete_button and recipe_id:
-        payload = {"recipe_id": recipe_id, "reason": final_reason}
-        if confirm_action("delete"):
-            # Simulate API DELETE request (replace with actual API call)
-            st.success(f"🎉 Recipe {recipe_id} has been deleted successfully!")
+    recipe_id = st.text_input("Enter Recipe ID to delete:")
+    if recipe_id:
+        if st.button("Delete Recipe"):
+            recipes_collection.delete_one({"_id": recipe_id})
+            st.success(f"Recipe with ID '{recipe_id}' deleted successfully!")
 
 # Sidebar navigation
 st.sidebar.title("Recipe Management")
-st.sidebar.markdown("<hr>", unsafe_allow_html=True)
-page = st.sidebar.selectbox("Choose a page", ["Submit & Generate Recipe", "Edit Recipe", "Delete Recipe"])
+option = st.sidebar.radio("Choose an action", ["Submit & Generate Recipe", "Edit Recipe", "Delete Recipe"])
 
-# Page routing
-if page == "Submit & Generate Recipe":
+if option == "Submit & Generate Recipe":
     submit_and_generate_recipe()
-elif page == "Edit Recipe":
+elif option == "Edit Recipe":
     edit_recipe()
-elif page == "Delete Recipe":
+elif option == "Delete Recipe":
     delete_recipe()

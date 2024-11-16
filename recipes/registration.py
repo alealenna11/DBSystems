@@ -4,21 +4,29 @@ import re  # Import regex module for email validation
 from db_connection import connect_db  # Import the database connection
 from datetime import datetime  # Import for handling date
 
+
 def hash_password(password):
     """Hashes a password for secure storage."""
     return hashlib.sha256(password.encode()).hexdigest()
+
 
 def is_valid_email(email):
     """Validates the email format using regex."""
     email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     return re.match(email_regex, email) is not None
 
+
 def is_valid_password(password):
     """Validates the password criteria."""
-    if (len(password) < 6 or not re.search(r'[A-Z]', password) or 
-        not re.search(r'[a-z]', password) or not re.search(r'[0-9]', password)):
+    if (
+            len(password) < 6
+            or not re.search(r'[A-Z]', password)
+            or not re.search(r'[a-z]', password)
+            or not re.search(r'[0-9]', password)
+    ):
         return False
     return True
+
 
 def show_registration():
     """Displays the registration page."""
@@ -38,37 +46,26 @@ def show_registration():
         if field in st.session_state.errors:
             del st.session_state.errors[field]
 
+    # Connect to the database
+    db, _, users_collection, *_ = connect_db()
+
     # Validation checks for username
     if username:
-        if len(username) < 3:  # Check length first
+        if len(username) < 3:  # Check length
             st.session_state.errors['username'] = "Username must be at least 3 characters long."
-        else:
-            # Check if the username is already taken
-            conn = connect_db()
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM Users WHERE username = %s", (username,))
-            username_user = cursor.fetchone()
-            cursor.close()  # Close the cursor after operation
-            if username_user:
-                st.session_state.errors['username'] = "Username already exists. Please choose a different username."
+        elif users_collection.find_one({"username": username}):  # Check if username exists
+            st.session_state.errors['username'] = "Username already exists. Please choose a different username."
 
     # Validation checks for email
     if email:
-        if not is_valid_email(email):  # Check if email format is valid
+        if not is_valid_email(email):  # Check format
             st.session_state.errors['email'] = "Invalid email format. Please enter a valid email (e.g., user@gmail.com)."
-        else:
-            # Check if the email is already taken
-            conn = connect_db()
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM Users WHERE email = %s", (email,))
-            email_user = cursor.fetchone()
-            cursor.close()  # Close the cursor after operation
-            if email_user:
-                st.session_state.errors['email'] = "Email is already taken. Please use a different email."
+        elif users_collection.find_one({"email": email}):  # Check if email exists
+            st.session_state.errors['email'] = "Email is already taken. Please use a different email."
 
     # Validation checks for password
     if password:
-        if not is_valid_password(password):  # Validate password criteria
+        if not is_valid_password(password):  # Validate criteria
             st.session_state.errors['password'] = (
                 "Password must be at least 6 characters long, "
                 "contain at least one uppercase letter, one lowercase letter, and one digit."
@@ -81,7 +78,8 @@ def show_registration():
 
     # Display error messages below respective fields
     for field, error_msg in st.session_state.errors.items():
-        st.error(error_msg)
+        if field in locals():  # Show errors for existing fields
+            st.error(error_msg)
 
     if st.button("Register", key="register_submit"):
         # Final checks before registration
@@ -91,20 +89,22 @@ def show_registration():
 
         # If all checks pass, register the user
         hashed_password = hash_password(password)
-        date_joined = datetime.now().date()
+        date_joined = datetime.now().strftime("%Y-%m-%d")
 
-        # Store the new user in the database
-        conn = connect_db()
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO Users (username, email, password_hashed, date_joined) "
-            "VALUES (%s, %s, %s, %s)",
-            (username, email, hashed_password, date_joined)
-        )
-        conn.commit()
-        cursor.close()  # Close the cursor after operation
+        try:
+            # Store the new user in the MongoDB collection
+            users_collection.insert_one({
+                "username": username,
+                "email": email,
+                "password_hashed": hashed_password,
+                "date_joined": date_joined
+            })
 
-        st.success("Registration successful! You can now log in.")
-        return True  # Indicate successful registration
+            st.success("Registration successful! You can now log in.")
+            return True  # Indicate successful registration
+
+        except Exception as e:
+            st.error(f"An error occurred during registration: {e}")
+            return False  # Indicate registration was unsuccessful
 
     return False  # Indicate registration was unsuccessful

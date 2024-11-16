@@ -70,6 +70,33 @@ def main():
         st.session_state.page = 'homepage'
         st.rerun()  # Rerun to go back to the homepage
 
+def fetch_recipes(search_query=None, rating_filter=None, cuisine_filter=None, dietary_filter=None, cook_time_filter=None):
+    _, recipes_collection, _, recipe_info_collection, recipe_ratings_collection, cuisines_collection, dietary_collection = connect_db()
+
+    query = {}
+
+    # Add search filter for title or description
+    if search_query:
+        query["$or"] = [
+            {"title": {"$regex": search_query, "$options": "i"}},
+            {"description": {"$regex": search_query, "$options": "i"}}
+        ]
+
+    # Add filters
+    if cuisine_filter and cuisine_filter != "All":
+        query["cuisine"] = cuisine_filter
+    if dietary_filter and dietary_filter != "All":
+        query["dietary"] = dietary_filter
+    if cook_time_filter:
+        query["cook_time"] = {"$lte": cook_time_filter}
+
+    # Fetch recipes with the query
+    recipes = list(recipes_collection.find(query))
+
+    if rating_filter and rating_filter != "All":
+        recipes = [recipe for recipe in recipes if recipe.get("average_rating", 0) >= rating_filter]
+
+    return recipes
 
 if __name__ == "__main__":
     main()
